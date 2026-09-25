@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phosphor</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #c8d0e0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+  }
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 20px;
+    font-size: 18px;
+    font-weight: 600;
+    z-index: 10;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(120, 200, 255, 0.5);
+  }
+  #hud span { letter-spacing: 0.5px; }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: crosshair;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    background: rgba(6, 6, 14, 0.88);
+    backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .panel {
+    background: #12131f;
+    border: 1px solid #2a2d44;
+    border-radius: 12px;
+    padding: 36px 40px;
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+  }
+  .panel h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, #78c8ff, #b78fff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .panel .subtitle {
+    font-size: 14px;
+    color: #6a7090;
+    margin-bottom: 24px;
+  }
+  .panel p.instructions {
+    font-size: 14px;
+    color: #8890a8;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+  .panel .final-score {
+    font-size: 48px;
+    font-weight: 700;
+    color: #78c8ff;
+    text-shadow: 0 0 20px rgba(120, 200, 255, 0.4);
+    margin: 8px 0 20px;
+  }
+  .panel label {
+    display: block;
+    font-size: 13px;
+    color: #6a7090;
+    margin-bottom: 6px;
+    text-align: left;
+  }
+  .panel input[type="text"] {
+    width: 100%;
+    padding: 10px 14px;
+    background: #1a1b2e;
+    border: 1px solid #2a2d44;
+    border-radius: 8px;
+    color: #c8d0e0;
+    font-size: 16px;
+    outline: none;
+    margin-bottom: 16px;
+  }
+  .panel input[type="text"]:focus {
+    border-color: #78c8ff;
+    box-shadow: 0 0 0 2px rgba(120, 200, 255, 0.15);
+  }
+  .btn {
+    display: inline-block;
+    padding: 12px 32px;
+    background: linear-gradient(135deg, #3a6fff, #6a3aff);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.03); box-shadow: 0 4px 20px rgba(90, 60, 255, 0.35); }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid #2a2d44;
+    color: #8890a8;
+    margin-left: 8px;
+  }
+  .btn-secondary:hover { border-color: #78c8ff; color: #c8d0e0; box-shadow: none; }
+  .error-msg {
+    color: #ff6b6b;
+    font-size: 13px;
+    margin-top: -8px;
+    margin-bottom: 12px;
+    min-height: 18px;
+  }
+
+  .scores-section { margin-top: 20px; text-align: left; }
+  .scores-section h3 {
+    font-size: 14px;
+    color: #6a7090;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    text-align: center;
+  }
+  .score-list {
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #2a2d44 transparent;
+  }
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 8px;
+    font-size: 14px;
+    border-radius: 4px;
+  }
+  .score-row:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  .score-row .rank { color: #6a7090; width: 28px; }
+  .score-row .sname { flex: 1; color: #c8d0e0; }
+  .score-row .sval { color: #78c8ff; font-weight: 600; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <span id="hud-score">Score: 0</span>
+  <span id="hud-timer">0:30</span>
+</div>
+
+<canvas id="game"></canvas>
+
+<!-- Start screen -->
+<div class="overlay" id="start-screen">
+  <div class="panel">
+    <h1>Phosphor</h1>
+    <p class="subtitle">catch the light before it fades</p>
+    <p class="instructions">
+      Glowing particles rise from the deep. Click them before they fade away.<br><br>
+      <strong style="color:#78c8ff">Brighter = more points</strong> but they vanish faster.<br>
+      <strong style="color:#b78fff">Dimmer = fewer points</strong> but linger longer.<br><br>
+      You have <strong>30 seconds</strong>. Make every click count.
+    </p>
+    <div class="scores-section" id="start-scores"></div>
+    <button class="btn" id="start-btn">Play</button>
+  </div>
+</div>
+
+<!-- Game over screen -->
+<div class="overlay hidden" id="end-screen">
+  <div class="panel">
+    <h1>Time's Up</h1>
+    <div class="final-score" id="final-score">0</div>
+    <label for="player-name">Your name</label>
+    <input type="text" id="player-name" maxlength="20" placeholder="Enter your name" autocomplete="off">
+    <div class="error-msg" id="submit-error"></div>
+    <div>
+      <button class="btn" id="submit-btn">Save Score</button>
+      <button class="btn btn-secondary" id="skip-btn">Skip</button>
+    </div>
+    <div class="scores-section" id="end-scores"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const hudScore = document.getElementById("hud-score");
+  const hudTimer = document.getElementById("hud-timer");
+  const startScreen = document.getElementById("start-screen");
+  const endScreen = document.getElementById("end-screen");
+  const startBtn = document.getElementById("start-btn");
+  const submitBtn = document.getElementById("submit-btn");
+  const skipBtn = document.getElementById("skip-btn");
+  const finalScoreEl = document.getElementById("final-score");
+  const playerNameInput = document.getElementById("player-name");
+  const submitError = document.getElementById("submit-error");
+  const startScoresEl = document.getElementById("start-scores");
+  const endScoresEl = document.getElementById("end-scores");
+
+  const GAME_DURATION = 30;
+  const SPAWN_INTERVAL_MIN = 180;
+  const SPAWN_INTERVAL_MAX = 500;
+  const PARTICLE_BASE_RADIUS = 18;
+  const PARTICLE_RADIUS_VAR = 14;
+
+  let particles = [];
+  let pops = [];
+  let score = 0;
+  let timeLeft = GAME_DURATION;
+  let gameRunning = false;
+  let gameStartTime = 0;
+  let nextSpawnTime = 0;
+  let animFrame = null;
+  let submitting = false;
+
+  const palettes = [
+    { r: 120, g: 200, b: 255 },
+    { r: 183, g: 143, b: 255 },
+    { r: 100, g: 255, b: 200 },
+    { r: 255, g: 180, b: 100 },
+    { r: 255, g: 120, b: 180 },
+  ];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function spawnParticle() {
+    const brightness = rand(0.3, 1.0);
+    const lifespan = 2.0 + (1 - brightness) * 4.0;
+    const radius = PARTICLE_BASE_RADIUS + brightness * PARTICLE_RADIUS_VAR;
+    const color = palettes[Math.floor(Math.random() * palettes.length)];
+    const points = Math.round(brightness * 100);
+
+    return {
+      x: rand(radius + 10, canvas.width - radius - 10),
+      y: canvas.height + radius,
+      radius: radius,
+      brightness: brightness,
+      life: lifespan,
+      maxLife: lifespan,
+      color: color,
+      points: points,
+      vy: -(40 + brightness * 60),
+      vx: rand(-15, 15),
+      wobblePhase: rand(0, Math.PI * 2),
+      wobbleSpeed: rand(1.5, 3),
+    };
+  }
+
+  function drawParticle(p) {
+    const alpha = Math.max(0, (p.life / p.maxLife) * p.brightness);
+    const glowSize = p.radius * (1.5 + 0.5 * alpha);
+
+    const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowSize);
+    grd.addColorStop(0, `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha})`);
+    grd.addColorStop(0.4, `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha * 0.5})`);
+    grd.addColorStop(1, `rgba(${p.color.r},${p.color.g},${p.color.b},0)`);
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * 0.3 * alpha, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.9})`;
+    ctx.fill();
+  }
+
+  function drawPop(pop) {
+    const progress = 1 - pop.life / pop.maxLife;
+    const alpha = (1 - progress) * 0.8;
+    const r = pop.radius * (1 + progress * 2);
+
+    ctx.beginPath();
+    ctx.arc(pop.x, pop.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${pop.color.r},${pop.color.g},${pop.color.b},${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.font = `bold ${14 + progress * 8}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.fillText(`+${pop.points}`, pop.x, pop.y - r - 6);
+  }
+
+  function update(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      p.y += p.vy * dt;
+      p.x += p.vx * dt + Math.sin(p.wobblePhase + performance.now() * 0.001 * p.wobbleSpeed) * 0.5;
+
+      if (p.life <= 0 || p.y < -p.radius) {
+        particles.splice(i, 1);
+      }
+    }
+
+    for (let i = pops.length - 1; i >= 0; i--) {
+      pops[i].life -= dt;
+      if (pops[i].life <= 0) pops.splice(i, 1);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const bgGrd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGrd.addColorStop(0, "#0a0a12");
+    bgGrd.addColorStop(1, "#0f1020");
+    ctx.fillStyle = bgGrd;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (const p of particles) drawParticle(p);
+    for (const pop of pops) drawPop(pop);
+  }
+
+  let lastTime = 0;
+  function gameLoop(ts) {
+    if (!gameRunning) return;
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+
+    const elapsed = (ts - gameStartTime) / 1000;
+    timeLeft = Math.max(0, GAME_DURATION - elapsed);
+
+    if (ts >= nextSpawnTime) {
+      particles.push(spawnParticle());
+      nextSpawnTime = ts + rand(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
+    }
+
+    update(dt);
+    draw();
+
+    hudScore.textContent = `Score: ${score}`;
+    const secs = Math.ceil(timeLeft);
+    hudTimer.textContent = `0:${secs < 10 ? "0" : ""}${secs}`;
+
+    if (timeLeft <= 0) {
+      endGame();
+      return;
+    }
+
+    animFrame = requestAnimationFrame(gameLoop);
+  }
+
+  function startGame() {
+    score = 0;
+    timeLeft = GAME_DURATION;
+    particles = [];
+    pops = [];
+    submitting = false;
+    submitBtn.disabled = false;
+    submitError.textContent = "";
+    playerNameInput.value = "";
+
+    startScreen.classList.add("hidden");
+    endScreen.classList.add("hidden");
+
+    gameRunning = true;
+    lastTime = performance.now();
+    gameStartTime = lastTime;
+    nextSpawnTime = lastTime + 300;
+    animFrame = requestAnimationFrame(gameLoop);
+  }
+
+  function endGame() {
+    gameRunning = false;
+    if (animFrame) cancelAnimationFrame(animFrame);
+
+    finalScoreEl.textContent = score;
+    endScreen.classList.remove("hidden");
+    loadScores(endScoresEl);
+    playerNameInput.focus();
+  }
+
+  canvas.addEventListener("click", function (e) {
+    if (!gameRunning) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    let bestIdx = -1;
+    let bestDist = Infinity;
+
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const dx = mx - p.x;
+      const dy = my - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= p.radius * 1.3 && dist < bestDist) {
+        bestIdx = i;
+        bestDist = dist;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      const p = particles[bestIdx];
+      score += p.points;
+      pops.push({
+        x: p.x, y: p.y,
+        radius: p.radius,
+        color: p.color,
+        points: p.points,
+        life: 0.6,
+        maxLife: 0.6,
+      });
+      particles.splice(bestIdx, 1);
+    }
+  });
+
+  canvas.addEventListener("touchstart", function (e) {
+    if (!gameRunning) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    canvas.dispatchEvent(new MouseEvent("click", {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+    }));
+  }, { passive: false });
+
+  function renderScores(container, rows) {
+    if (!rows.length) {
+      container.innerHTML = '<h3>High Scores</h3><p style="text-align:center;color:#6a7090;font-size:13px;">No scores yet</p>';
+      return;
+    }
+    let html = '<h3>High Scores</h3><div class="score-list">';
+    rows.forEach(function (r, i) {
+      html += '<div class="score-row">'
+        + '<span class="rank">' + (i + 1) + '.</span>'
+        + '<span class="sname">' + escapeHtml(r.name) + '</span>'
+        + '<span class="sval">' + r.score + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function loadScores(container) {
+    fetch("scores")
+      .then(function (r) { return r.json(); })
+      .then(function (rows) { renderScores(container, rows); })
+      .catch(function () {
+        container.innerHTML = '<h3>High Scores</h3><p style="text-align:center;color:#6a7090;font-size:13px;">Could not load scores</p>';
+      });
+  }
+
+  startBtn.addEventListener("click", startGame);
+
+  submitBtn.addEventListener("click", function () {
+    if (submitting) return;
+    const name = playerNameInput.value.trim();
+    if (!name) {
+      submitError.textContent = "Please enter your name";
+      playerNameInput.focus();
+      return;
+    }
+    if (name.length > 20) {
+      submitError.textContent = "Name must be 20 characters or fewer";
+      return;
+    }
+
+    submitting = true;
+    submitBtn.disabled = true;
+    submitError.textContent = "";
+
+    fetch("scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, score: score }),
+    })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || "Save failed"); });
+        return r.json();
+      })
+      .then(function () {
+        loadScores(endScoresEl);
+        submitBtn.textContent = "Saved!";
+        setTimeout(showRestart, 800);
+      })
+      .catch(function (err) {
+        submitError.textContent = err.message || "Failed to save score";
+        submitting = false;
+        submitBtn.disabled = false;
+      });
+  });
+
+  playerNameInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitBtn.click();
+    }
+  });
+
+  skipBtn.addEventListener("click", showRestart);
+
+  function showRestart() {
+    endScreen.classList.add("hidden");
+    startScreen.classList.remove("hidden");
+    loadScores(startScoresEl);
+  }
+
+  loadScores(startScoresEl);
+
+  draw();
+})();
+</script>
+</body>
+</html>
